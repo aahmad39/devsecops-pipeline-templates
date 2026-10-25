@@ -1,0 +1,16 @@
+# Terraform local
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+
+# Test & scan reports
+checkov-results.xml
+infracost.json
+drift_report.txt
+
+# OS & Temp
+.DS_Store
+Thumbs.db
+*.log

@@ -1,0 +1,47 @@
+# =========================================================================
+# SCHEDULED PIPELINE: HEADLESS INFRASTRUCTURE DRIFT DETECTION
+# Runs daily at 02:00 AM UTC to identify out-of-band manual changes
+# =========================================================================
+
+schedules:
+  - cron: '0 2 * * *'
+    displayName: 'Daily 2 AM Drift Scan'
+    branches:
+      include:
+        - main
+    always: true
+
+trigger: none
+pr: none
+
+jobs:
+  - job: DriftDetection
+    displayName: 'Detect Infrastructure Configuration Drift'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+      - task: TerraformInstaller@0
+        inputs:
+          terraformVersion: '1.5.7'
+
+      - script: |
+          echo "==> Running Drift Detection..."
+          terraform init
+          # terraform plan -detailed-exitcode:
+          # 0 = No changes (Clean)
+          # 1 = Error
+          # 2 = Drift detected!
+          terraform plan -detailed-exitcode -no-color > drift_report.txt || exit_code=$?
+          
+          if [ $exit_code -eq 2 ]; then
+            echo "##vso[task.logissue type=warning]INFRASTRUCTURE DRIFT DETECTED!"
+            echo "Unapproved manual portal changes detected. Check drift_report.txt."
+            # Optionally post to Slack / Teams Webhook
+          elif [ $exit_code -eq 0 ]; then
+            echo "SUCCESS: Infrastructure is 100% in sync with Terraform state."
+          else
+            echo "ERROR: Terraform plan failed with execution error."
+            exit 1
+          fi
+        displayName: 'Execute Plan & Evaluate Detailed Exit Code'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/environments/prod'

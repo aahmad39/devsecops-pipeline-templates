@@ -1,0 +1,58 @@
+# =========================================================================
+# REUSABLE TEMPLATE: VALIDATE & TEST
+# Validates code formatting, static linting, and basic policy compliance
+# =========================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+  - name: terraformVersion
+    type: string
+    default: '1.5.7'
+
+stages:
+  - stage: ValidateAndTest
+    displayName: 'Stage 1: Validate, Lint & Test'
+    jobs:
+      - job: CodeValidation
+        displayName: 'TFLint, Formatting & Secret Scanning'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.x'
+
+          # Step 1: Install Terraform
+          - task: TerraformInstaller@0
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '${{ parameters.terraformVersion }}'
+
+          # Step 2: Terraform Format Check
+          - script: |
+              echo "==> Checking Terraform code formatting..."
+              terraform fmt -check -recursive
+            displayName: 'Terraform Format Check'
+            workingDirectory: ${{ parameters.workingDirectory }}
+
+          # Step 3: Install & Run TFLint
+          - script: |
+              echo "==> Installing TFLint..."
+              curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+              tflint --init
+              echo "==> Running TFLint inspection..."
+              tflint --recursive
+            displayName: 'Run TFLint Static Analysis'
+            workingDirectory: ${{ parameters.workingDirectory }}
+
+          # Step 4: Secret Scanning with Gitleaks
+          - script: |
+              echo "==> Installing Gitleaks..."
+              curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz | tar -xz
+              sudo mv gitleaks /usr/local/bin/
+              echo "==> Running Gitleaks scan on repository..."
+              gitleaks detect --verbose --redact
+            displayName: 'Execute Gitleaks Secret Detection'
+            workingDirectory: ${{ parameters.workingDirectory }}

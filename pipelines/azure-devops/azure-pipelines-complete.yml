@@ -1,0 +1,51 @@
+# =========================================================================
+# MASTER PIPELINE: ENTERPRISE DEVSECOPS MULTI-STAGE CI/CD
+# Architecture: Validate ➔ Security Scan ➔ FinOps ➔ Plan ➔ Apply ➔ Rollback
+# =========================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+      - release/*
+  paths:
+    exclude:
+      - '*.md'
+      - 'docs/**'
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  - name: terraformVersion
+    value: '1.5.7'
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/environments/dev'
+  - name: azureServiceConnection
+    value: 'azure-enterprise-sc'
+
+stages:
+  # Stage 1: Validation, Linting & Secret Detection
+  - template: ../../templates/stages/validate-and-test.yml
+    parameters:
+      workingDirectory: $(workingDirectory)
+      terraformVersion: $(terraformVersion)
+
+  # Stage 2: Policy-as-Code & Vulnerability Scanning (Checkov & Trivy)
+  - template: ../../templates/stages/security-scan.yml
+    parameters:
+      workingDirectory: $(workingDirectory)
+
+  # Stage 3: FinOps Monthly Spend Estimation (Infracost)
+  - template: ../../templates/stages/cost-estimation.yml
+    parameters:
+      workingDirectory: $(workingDirectory)
+
+  # Stage 4 & 5: Terraform Plan & Controlled Manual Approval Apply
+  - template: ../../templates/stages/terraform-apply.yml
+    parameters:
+      environmentName: 'dev'
+      workingDirectory: $(workingDirectory)
+      azureServiceConnection: $(azureServiceConnection)

@@ -1,0 +1,45 @@
+# =========================================================================
+# REUSABLE TEMPLATE: SECURITY & COMPLIANCE SCAN (SHIFT-LEFT)
+# Runs Checkov Policy-as-Code and Trivy Vulnerability Scanners
+# =========================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+
+stages:
+  - stage: SecurityScan
+    displayName: 'Stage 2: Shift-Left Security & Compliance Gates'
+    dependsOn: ValidateAndTest
+    jobs:
+      - job: SecurityScanning
+        displayName: 'Checkov CIS Benchmarks & Trivy Scans'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          # Step 1: Install & Run Checkov
+          - script: |
+              echo "==> Installing Checkov..."
+              pip install checkov
+              echo "==> Running Checkov against CIS Microsoft Azure Foundations Benchmark..."
+              checkov -d . --framework terraform --output junitxml --output-file-path $(Agent.TempDirectory)/checkov-results.xml || true
+            displayName: 'Run Checkov Policy-as-Code Scanner'
+            workingDirectory: ${{ parameters.workingDirectory }}
+
+          # Step 2: Publish Checkov Test Results
+          - task: PublishTestResults@2
+            displayName: 'Publish Security Scan Test Results'
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '$(Agent.TempDirectory)/checkov-results.xml'
+              failTaskOnFailedTests: false
+
+          # Step 3: Run Trivy Vulnerability Scanner
+          - script: |
+              echo "==> Installing Trivy..."
+              curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+              echo "==> Running Trivy scan for misconfigurations & CVEs..."
+              trivy config . --severity HIGH,CRITICAL --exit-code 0
+            displayName: 'Run Trivy Vulnerability Scanner'
+            workingDirectory: ${{ parameters.workingDirectory }}

@@ -1,0 +1,64 @@
+# =========================================================================
+# REUSABLE TEMPLATE: TERRAFORM PLAN & CONTROLLED APPLY
+# Handles execution plan generation, manual approval gate, and deployment
+# =========================================================================
+
+parameters:
+  - name: environmentName
+    type: string
+    default: 'dev'
+  - name: azureServiceConnection
+    type: string
+    default: 'azure-service-connection'
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+
+stages:
+  - stage: Plan_${{ parameters.environmentName }}
+    displayName: 'Stage 4: Terraform Plan (${{ parameters.environmentName }})'
+    jobs:
+      - job: Plan
+        displayName: 'Generate Execution Plan'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: |
+              echo "==> Initializing Terraform with remote state..."
+              terraform init
+              echo "==> Generating Terraform plan..."
+              terraform plan -out=tfplan -detailed-exitcode || [ $? -eq 2 ]
+            displayName: 'Terraform Plan'
+            workingDirectory: ${{ parameters.workingDirectory }}
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish Terraform Plan Artifact'
+            inputs:
+              targetPath: '${{ parameters.workingDirectory }}/tfplan'
+              artifact: 'tfplan-${{ parameters.environmentName }}'
+
+  - stage: Deploy_${{ parameters.environmentName }}
+    displayName: 'Stage 5: Production Deployment (${{ parameters.environmentName }})'
+    dependsOn: Plan_${{ parameters.environmentName }}
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: ControlledApply
+        displayName: 'Terraform Apply with Gate Approval'
+        environment: '${{ parameters.environmentName }}-approval-gate'
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  displayName: 'Download Plan Artifact'
+                  inputs:
+                    artifact: 'tfplan-${{ parameters.environmentName }}'
+                    path: '$(Pipeline.Workspace)'
+
+                - script: |
+                    echo "==> Executing controlled Terraform apply..."
+                    terraform apply -auto-approve $(Pipeline.Workspace)/tfplan
+                  displayName: 'Terraform Apply'
+                  workingDirectory: ${{ parameters.workingDirectory }}

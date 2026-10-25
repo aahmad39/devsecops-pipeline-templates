@@ -1,0 +1,30 @@
+# =========================================================================
+# REUSABLE TEMPLATE: FINOPS COST ESTIMATION (INFRACOST)
+# Estimates cloud monthly spend delta before merging PRs
+# =========================================================================
+
+parameters:
+  - name: workingDirectory
+    type: string
+    default: '$(System.DefaultWorkingDirectory)'
+
+stages:
+  - stage: CostEstimation
+    displayName: 'Stage 3: FinOps Cloud Spend Forecasting'
+    dependsOn: SecurityScan
+    jobs:
+      - job: InfracostAnalysis
+        displayName: 'Infracost Monthly Cost Delta'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: |
+              echo "==> Installing Infracost CLI..."
+              curl -fsSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+              echo "==> Generating Infracost breakdown..."
+              infracost breakdown --path . --format json --out-file $(Agent.TempDirectory)/infracost.json || true
+              infracost output --path $(Agent.TempDirectory)/infracost.json --format table
+            displayName: 'Run Infracost Cost Estimation'
+            workingDirectory: ${{ parameters.workingDirectory }}
+            env:
+              INFRACOST_API_KEY: $(INFRACOST_API_KEY)
